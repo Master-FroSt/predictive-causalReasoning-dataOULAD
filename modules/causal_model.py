@@ -20,8 +20,8 @@ def evaluate_causal_effect(df, top_features):
         print(f"\n-> Menganalisis efek kausal untuk fitur: '{feature}'")
 
         # Membangun string koneksi confounder ke target dan feature
-        confounder_to_target = "\n        ".join([f"{c} -> target;" for c in confounders])
-        confounder_to_feature = "\n        ".join([f"{c} -> {feature};" for c in confounders])
+        confounder_to_target = "\n        ".join([f'"{c}" -> "{outcome_var}";' for c in confounders])
+        confounder_to_feature = "\n        ".join([f'"{c}" -> "{feature}";' for c in confounders])
 
     # Membangun string Causal Graph (DAG) menggunakan format GML (NetworkX)
         # Causal Graph dinamis untuk setiap fitur
