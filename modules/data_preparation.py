@@ -52,12 +52,21 @@ def preprocess_data(df, sample_frac=1.0):
 
     df_clean = df.drop(columns=['id_student', 'code_module', 'code_presentation'])
 
+
+    # ONE-HOT ENCODING (pd.get_dummies)
+    cat_columns = ['gender', 'region', 'highest_education', 'imd_band', 'age_band', 'disability']
+    cat_columns = [col for col in cat_columns if col in df_clean.columns]
+
+    # drop_first=True untuk mencegah multicollinearity (Dummy Variable Trap)
+    df_clean = pd.get_dummies(df_clean, columns=cat_columns, drop_first=True)
+
     # Label Encoding
     le = LabelEncoder()
     cat_columns = ['gender', 'region', 'highest_education', 'imd_band', 'age_band', 'disability']
-    for col in cat_columns:
-        if col in df_clean.columns:
-            df_clean[col] = le.fit_transform(df_clean[col].astype(str))
+    # Konversi nilai boolean (True/False) dari hasil dummies menjadi integer (1/0)
+    for col in df_clean.columns:
+        if df_clean[col].dtype == bool:
+            df_clean[col] = df_clean[col].astype(int)
 
     # Binerisasi Target
     df_clean['target'] = df_clean['final_result'].apply(lambda x: 1 if x in ['Pass', 'Distinction'] else 0)

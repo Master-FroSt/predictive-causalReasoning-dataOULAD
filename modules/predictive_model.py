@@ -3,6 +3,7 @@ from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.preprocessing import StandardScaler
 from imblearn.over_sampling import RandomOverSampler
 import pandas as pd
 import numpy as np
@@ -23,6 +24,8 @@ def train_predictive_models(df):
     # Konfigurasi 10-Fold Cross Validation
     skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
     ros = RandomOverSampler(random_state=42)
+    # Menyiapkan Scaler (Menyamakan rentang nilai klik dan fitur One-Hot)
+    scaler = StandardScaler()
 
     # MENGGUNAKAN LinearSVC: Ratusan kali lebih cepat dibanding SVC biasa untuk dataset >10.000 baris
     models = {
@@ -48,10 +51,19 @@ def train_predictive_models(df):
         # 2. Lakukan Random Over-Sampling (ROS) HANYA pada Train Set
         X_train_res, y_train_res = ros.fit_resample(X_train, y_train)
 
+        # 2. FEATURE SCALING (StandardScaler)
+        # Scaler dilatih (fit) HANYA pada data latih agar tidak terjadi data leakage
+        X_train_res_scaled = scaler.fit_transform(X_train_res)
+        X_test_scaled = scaler.transform(X_test)
+
+        # Mengembalikan format ke DataFrame agar kolom tidak hilang
+        X_train_res_scaled = pd.DataFrame(X_train_res_scaled, columns=X.columns)
+        X_test_scaled = pd.DataFrame(X_test_scaled, columns=X.columns)
+
         # 3. Latih dan Evaluasi setiap model
         for name, model in models.items():
-            model.fit(X_train_res, y_train_res)
-            y_pred = model.predict(X_test)
+            model.fit(X_train_res_scaled, y_train_res)
+            y_pred = model.predict(X_test_scaled)
 
             metrics[name]['acc'].append(accuracy_score(y_test, y_pred))
             metrics[name]['prec'].append(precision_score(y_test, y_pred, zero_division=0))
