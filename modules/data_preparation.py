@@ -2,13 +2,11 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
 
-def load_and_aggregate_data(data_path="data", cutoff_days=60):
+def load_and_aggregate_data(data_path="data"):
     """
     Mengambil dan menggabungkan data OULAD.
-    cutoff_days: Hanya menghitung klik aktivitas dalam X hari pertama sejak kuliah dimulai.
-                 Ini berguna untuk sistem "Deteksi Dini" (Early Warning System).
     """
-    print(f"Memuat data... (Filter aktivitas VLE hingga hari ke-{cutoff_days})")
+    print(f"Memuat data... (Filter aktivitas VLE)")
 
     # 1. Load Data Utama
     df_info = pd.read_csv(f"{data_path}/studentInfo.csv")
@@ -16,10 +14,6 @@ def load_and_aggregate_data(data_path="data", cutoff_days=60):
     # 2. Agregasi VLE (Aktivitas) dengan Time-Window / Cut-off
     df_student_vle = pd.read_csv(f"{data_path}/studentVle.csv")
     df_vle = pd.read_csv(f"{data_path}/vle.csv")
-
-    # Filter: Hanya ambil klik di bawah batas hari (Deteksi Dini)
-    if cutoff_days is not None:
-        df_student_vle = df_student_vle[df_student_vle['date'] <= cutoff_days]
 
     # Gabungkan VLE
     vle_merged = pd.merge(df_student_vle, df_vle, on=['id_site', 'code_module', 'code_presentation'])

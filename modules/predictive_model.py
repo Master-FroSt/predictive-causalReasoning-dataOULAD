@@ -2,9 +2,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from imblearn.over_sampling import RandomOverSampler
 import pandas as pd
+import numpy as np
 import warnings
 
 # Mengabaikan warning iterasi SVM agar terminal tetap bersih
@@ -13,15 +14,15 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 def train_predictive_models(df):
     """
-    Menjalankan proses Machine Learning menggunakan model yang lebih optimal.
+    Menjalankan Machine Learning dengan 10-Fold Cross Validation.
+    Menghindari data leakage dengan melakukan Oversampling HANYA pada data training.
     """
     X = df.drop(columns=['target'])
     y = df['target']
 
-    # 1. Random Over-Sampling (ROS) untuk Data Imbalance
+    # Konfigurasi 10-Fold Cross Validation
+    skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
     ros = RandomOverSampler(random_state=42)
-    X_res, y_res = ros.fit_resample(X, y)
-    print(f"Data setelah ROS: {X_res.shape[0]} baris.")
 
     # MENGGUNAKAN LinearSVC: Ratusan kali lebih cepat dibanding SVC biasa untuk dataset >10.000 baris
     models = {
@@ -30,26 +31,51 @@ def train_predictive_models(df):
         'Support Vector Machine': LinearSVC(random_state=42, dual=False)
     }
 
-    # Simulasi Feature Selection untuk mengekstrak Top 5 Fitur
-    rf = RandomForestClassifier(n_estimators=50, random_state=42)
-    rf.fit(X_res, y_res)
-    importances = pd.Series(rf.feature_importances_, index=X.columns)
-    top_features = importances.nlargest(5).index.tolist()
+    # Untuk menyimpan metrik setiap model
+    metrics = {name: {'acc': [], 'prec': [], 'rec': [], 'f1': []} for name in models.keys()}
 
-    print("\n--- Evaluasi Model (Dengan Top 5 Fitur) ---")
-    X_top = X_res[top_features]
+    # Untuk mengakumulasi feature importances dari Random Forest di setiap fold
+    rf_feature_importances = np.zeros(X.shape[1])
 
-    # 2. Iterasi Klasifikasi Sederhana
-    for name, model in models.items():
-        print(f"Melatih {name}...")
-        model.fit(X_top, y_res)
-        y_pred = model.predict(X_top)
-        acc = accuracy_score(y_res, y_pred)
+    print("\n--- Evaluasi Model dengan 10-Fold Cross Validation ---")
 
-        print(f"-> {name} Accuracy: {acc:.4f}")
-        if name == 'Random Forest':
-            print("-> Classification Report Random Forest:")
-            print(classification_report(y_res, y_pred))
+    fold = 1
+    for train_idx, test_idx in skf.split(X, y):
+        # 1. Pisahkan Train dan Test set
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
-    print(f"\nFitur Paling Relevan yang ditemukan ML: {top_features}")
+        # 2. Lakukan Random Over-Sampling (ROS) HANYA pada Train Set
+        X_train_res, y_train_res = ros.fit_resample(X_train, y_train)
+
+        # 3. Latih dan Evaluasi setiap model
+        for name, model in models.items():
+            model.fit(X_train_res, y_train_res)
+            y_pred = model.predict(X_test)
+
+            metrics[name]['acc'].append(accuracy_score(y_test, y_pred))
+            metrics[name]['prec'].append(precision_score(y_test, y_pred, zero_division=0))
+            metrics[name]['rec'].append(recall_score(y_test, y_pred, zero_division=0))
+            metrics[name]['f1'].append(f1_score(y_test, y_pred, zero_division=0))
+
+            # Kumpulkan nilai importance khusus untuk Random Forest
+            if name == 'Random Forest':
+                rf_feature_importances += model.feature_importances_
+
+        fold += 1
+
+    # Menampilkan rata-rata metrik evaluasi
+    for name in models.keys():
+        print(f"\n[{name}] Rata-rata 10-Fold CV:")
+        print(f"-> Accuracy : {np.mean(metrics[name]['acc']):.4f}")
+        print(f"-> Precision: {np.mean(metrics[name]['prec']):.4f}")
+        print(f"-> Recall   : {np.mean(metrics[name]['rec']):.4f}")
+        print(f"-> F1-Score : {np.mean(metrics[name]['f1']):.4f}")
+
+    # Mengambil Top 5 fitur berdasarkan rata-rata importances di semua fold
+    rf_feature_importances /= 10
+    importances_series = pd.Series(rf_feature_importances, index=X.columns)
+    top_features = importances_series.nlargest(5).index.tolist()
+
+    print(f"\nFitur Paling Relevan yang ditemukan ML (Kandidat Kausal): {top_features}")
     return top_features

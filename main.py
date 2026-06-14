@@ -39,7 +39,7 @@ def main():
     except FileNotFoundError as e:
         print(f"\n[Error] File CSV hilang: {e}")
         print(
-            "Pastikan semua file (studentInfo.csv, studentVle.csv, vle.csv, studentAssessment.csv) ada di folder 'data'.")
+            "Pastikan semua file (studentInfo.csv, studentVle.csv, vle.csv) ada di folder 'data'.")
 
 
 if __name__ == "__main__":

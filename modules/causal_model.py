@@ -1,68 +1,80 @@
 import dowhy
-import pandas as pd
-import networkx as nx
 
 
 def evaluate_causal_effect(df, top_features):
     """
-    Tahap Penalaran (Reasoning): Memvalidasi apakah top fitur ML benar-benar memiliki sebab-akibat.
+    Tahap Penalaran (Reasoning): Menguji seluruh Top Fitur dari ML
+    untuk melihat fitur mana yang memiliki efek kausal paling kuat.
     """
     print("\n=== Memulai Analisis Causal Reasoning ===")
-
-    # Anggap fitur terbaik peringkat ke-1 adalah 'treatment' (misal: 'quiz')
-    treatment_var = top_features[4] # ubah untuk menguji fitur lainnya
     outcome_var = 'target'
 
-    # Confounders (Variabel Pengganggu)
-    # Logikanya: Latar belakang demografi dapat memengaruhi rajinnya kuis DAN nilai akhir
+    causal_results = {}
     confounders = ['highest_education', 'imd_band', 'gender']
 
+    # Iterasi untuk menguji semua top fitur
+    for feature in top_features:
+        print(f"\n-> Menganalisis efek kausal untuk fitur: '{feature}'")
+
     # Membangun string Causal Graph (DAG) menggunakan format GML (NetworkX)
-    # Ini adalah representasi eksplisit hipotesis kausal
-    causal_graph = """
-    digraph {
-        highest_education -> target;
-        imd_band -> target;
-        gender -> target;
-        highest_education -> TREATMENT_VAR;
-        imd_band -> TREATMENT_VAR;
-        gender -> TREATMENT_VAR;
-        TREATMENT_VAR -> target;
-    }
-    """.replace("TREATMENT_VAR", treatment_var)
+        # Causal Graph dinamis untuk setiap fitur
+        causal_graph = f"""
+        digraph {{
+            highest_education -> target;
+            imd_band -> target;
+            gender -> target;
+            highest_education -> {feature};
+            imd_band -> {feature};
+            gender -> {feature};
+            {feature} -> target;
+        }}
+        """
 
-    # 1. Mendefinisikan Model Causal DoWhy
-    print(f"1. Membangun DAG untuk mengeksplorasi hubungan {treatment_var} -> target")
-    model = dowhy.CausalModel(
-        data=df,
-        treatment=treatment_var,
-        outcome=outcome_var,
-        graph=causal_graph
-    )
+        # 1. Membangun DAG dengan Model Causal DoWhy
+        model = dowhy.CausalModel(
+            data=df,
+            treatment=feature,
+            outcome=outcome_var,
+            graph=causal_graph
+        )
 
-    # 2. Identifikasi efek
-    identified_estimand = model.identify_effect(proceed_when_unidentifiable=True)
+        # 2. Identifikasi efek
+        identified_estimand = model.identify_effect(proceed_when_unidentifiable=True)
 
-    # 3. Estimasi Efek Kausal (Menggunakan Regresi Linear sebagai Estimator)
-    print("2. Mengestimasi Efek Kausal murni...")
-    estimate = model.estimate_effect(
-        identified_estimand,
-        method_name="backdoor.linear_regression"
-    )
+        # 3. Estimasi Efek Kausal (Menggunakan Regresi Linear sebagai Estimator)
+        estimate = model.estimate_effect(
+            identified_estimand,
+            method_name="backdoor.linear_regression"
+        )
 
-    print(f"-> Nilai Efek Kausal Estimasi: {estimate.value:.4f}")
-    if estimate.value > 0:
+        ate_value = estimate.value
+        causal_results[feature] = ate_value
+        print(f"   [+] Average Treatment Effect (ATE): {ate_value:.4f}")
+
+        # 4. Refutasi Cepat (Robustness Check)
+        refutation = model.refute_estimate(
+            identified_estimand,
+            estimate,
+            method_name="placebo_treatment_refuter"
+        )
+        print(f"   [+] Placebo Refutation (Mendekati 0 = Valid): {refutation.new_effect:.4f}")
+
+    # REKOMENDASI PRESKRIPTIF
+    print("\n" + "=" * 40)
+    print("KESIMPULAN & REKOMENDASI PRESKRIPTIF")
+    print("=" * 40)
+    # Filter aktivitas yang memang terbukti MENINGKATKAN kelulusan (ATE > 0)
+    positive_features = {k: v for k, v in causal_results.items() if v > 0}
+
+    if positive_features:
+        # Cari fitur dengan dampak kausal tertinggi
+        best_feature = max(positive_features, key=positive_features.get)
+        max_ate = positive_features[best_feature]
+
         print(
-            f"   Interpretasi: Peningkatan pada '{treatment_var}' secara kausal terbukti MENINGKATKAN probabilitas lulus.")
+            f"Berdasarkan Causal AI, aktivitas '{best_feature}' memiliki dampak POSITIF TERBESAR (Efek: {max_ate:.4f}).")
+        print("\n[REKOMENDASI SISTEM]")
+        print(
+            f"Sistem EWS harus merekomendasikan mahasiswa berisiko gagal untuk memprioritaskan dan meningkatkan partisipasi pada '{best_feature}'.")
     else:
-        print(f"   Interpretasi: Peningkatan pada '{treatment_var}' BUKAN penyebab kelulusan (korelasi palsu).")
-
-    # 4. Refutasi (Robustness Check)
-    print("\n3. Menguji Keabsahan Kausalitas (Refutasi: Placebo Treatment)...")
-    # Mengganti variabel treatment dengan data random untuk melihat apakah model tertipu
-    refutation = model.refute_estimate(
-        identified_estimand,
-        estimate,
-        method_name="placebo_treatment_refuter"
-    )
-    print(f"Nilai Efek Kausal Placebo (Seharusnya mendekati 0): {refutation.new_effect:.4f}")
+        print("Tidak ditemukan fitur/aktivitas dengan hubungan kausal positif yang signifikan.")
