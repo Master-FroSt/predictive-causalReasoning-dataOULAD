@@ -9,74 +9,75 @@ import pandas as pd
 import numpy as np
 import warnings
 
-# Mengabaikan warning iterasi SVM agar terminal tetap bersih
+# Mengabaikan warning iterasi SVM
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def train_predictive_models(df):
     """
-    Menjalankan Machine Learning dengan 10-Fold Cross Validation.
-    Menghindari data leakage dengan melakukan Oversampling HANYA pada data training.
+    Melatih klasifikasi dengan Decision Tree, Random Forest, dan Linear SVC.
+    Terdapat evaluasi 10-Fold CV dan pencegahan Data Leakage.
     """
     X = df.drop(columns=['target'])
     y = df['target']
 
     # Konfigurasi 10-Fold Cross Validation
     skf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+    # Inisialisasi Random Over Sampling (ROS) untuk penanganan kelas tidak seimbang
     ros = RandomOverSampler(random_state=42)
-    # Menyiapkan Scaler (Menyamakan rentang nilai klik dan fitur One-Hot)
+    # Inisialisasi Scaler untuk standardisasi unit fitur
     scaler = StandardScaler()
 
-    # MENGGUNAKAN LinearSVC: Ratusan kali lebih cepat dibanding SVC biasa untuk dataset >10.000 baris
+    # Definisi 3 Algoritma Klasifikasi Utama
     models = {
-        'Decision Tree': DecisionTreeClassifier(max_depth=10, random_state=42),  # Diberi max_depth mencegah overfitting
+        'Decision Tree': DecisionTreeClassifier(max_depth=10, random_state=42),  # Max_depth mencegah overfitting
         'Random Forest': RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42),
         'Support Vector Machine': LinearSVC(random_state=42, dual=False)
     }
 
-    # Untuk menyimpan metrik setiap model
+    # Dictionary untuk menyimpan rekam jejak metrik evaluasi
     metrics = {name: {'acc': [], 'prec': [], 'rec': [], 'f1': []} for name in models.keys()}
 
-    # Untuk mengakumulasi feature importances dari Random Forest di setiap fold
+    # Matriks akumulasi untuk mengukur kepentingan fitur (feature importance) dari Random Forest
     rf_feature_importances = np.zeros(X.shape[1])
 
     print("\n--- Evaluasi Model dengan 10-Fold Cross Validation ---")
 
     fold = 1
     for train_idx, test_idx in skf.split(X, y):
-        # 1. Pisahkan Train dan Test set
+        # Pemisahan Train dan Test set
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
-        # 2. Lakukan Random Over-Sampling (ROS) HANYA pada Train Set
+        # Random Over-Sampling (ROS) pada Train Set
         X_train_res, y_train_res = ros.fit_resample(X_train, y_train)
 
-        # 2. FEATURE SCALING (StandardScaler)
-        # Scaler dilatih (fit) HANYA pada data latih agar tidak terjadi data leakage
+        # FEATURE SCALING (StandardScaler)
         X_train_res_scaled = scaler.fit_transform(X_train_res)
         X_test_scaled = scaler.transform(X_test)
 
-        # Mengembalikan format ke DataFrame agar kolom tidak hilang
+        # Konversi array Numpy ke DataFrame agar nama fitur tidak hilang
         X_train_res_scaled = pd.DataFrame(X_train_res_scaled, columns=X.columns)
         X_test_scaled = pd.DataFrame(X_test_scaled, columns=X.columns)
 
-        # 3. Latih dan Evaluasi setiap model
+        # Pelatihan dan Evaluasi  model
         for name, model in models.items():
             model.fit(X_train_res_scaled, y_train_res)
             y_pred = model.predict(X_test_scaled)
 
+            # Menyimpan metrik per iterasi (Fold)
             metrics[name]['acc'].append(accuracy_score(y_test, y_pred))
             metrics[name]['prec'].append(precision_score(y_test, y_pred, zero_division=0))
             metrics[name]['rec'].append(recall_score(y_test, y_pred, zero_division=0))
             metrics[name]['f1'].append(f1_score(y_test, y_pred, zero_division=0))
 
-            # Kumpulkan nilai importance khusus untuk Random Forest
+            # Ekstraksi pola feature importances khusus dari Random Forest
             if name == 'Random Forest':
                 rf_feature_importances += model.feature_importances_
 
         fold += 1
 
-    # Menampilkan rata-rata metrik evaluasi
+    # Menampilkan mean metrik
     for name in models.keys():
         print(f"\n[{name}] Rata-rata 10-Fold CV:")
         print(f"-> Accuracy : {np.mean(metrics[name]['acc']):.4f}")
@@ -84,7 +85,7 @@ def train_predictive_models(df):
         print(f"-> Recall   : {np.mean(metrics[name]['rec']):.4f}")
         print(f"-> F1-Score : {np.mean(metrics[name]['f1']):.4f}")
 
-    # Mengambil Top 5 fitur berdasarkan rata-rata importances di semua fold
+    # Mengambil Top 5 fitur berdasarkan rata-rata importances di 10 fold
     rf_feature_importances /= 10
     importances_series = pd.Series(rf_feature_importances, index=X.columns)
     top_features = importances_series.nlargest(5).index.tolist()
